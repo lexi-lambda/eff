@@ -796,6 +796,7 @@ data State s :: Effect where
   Get :: State s m s
   Put :: ~s -> State s m ()
 
+-- see Note [evalState is wired in]
 evalState :: s -> Eff (State s ': effs) a -> Eff effs a
 evalState (s0 :: s) (Eff m0) = Eff \rs -> do
   ref <- newIORef s0
@@ -827,6 +828,21 @@ evalState (s0 :: s) (Eff m0) = Eff \rs -> do
               handleCapture ref2 target2 mode2 f2 k4 k2
             unEVM (k2 b) rs2
       captureVM $! Capture target1 mode1 f1 k3
+
+{- Note [evalState is wired in]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+There is no way to implement a `State` effect using the API provided by
+`handle`, since the handler is just a stateless function. For user-defined
+effects that need access to `State`, the intended implementation strategy is to
+defer to an enclosing `State` handler. This leaves open the question of how to
+implement `State` itself.
+
+It seems like it would be possible to just implement `State` via an `IORef`,
+using `unsafeIOToEff`. However, this is insufficient if a continuation is
+invoked multiple times, since each distinct invocation should have its own,
+isolated state. `evalState` is therefore implemented as a primitive that saves
+the state on continuation capture and allocates a fresh cell on continuation
+restore. -}
 
 -- -----------------------------------------------------------------------------
 
