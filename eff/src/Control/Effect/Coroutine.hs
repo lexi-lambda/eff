@@ -7,16 +7,16 @@ module Control.Effect.Coroutine
 
 import Control.Effect.Base
 
-data Coroutine a b :: Effect where
-  Yield :: a -> Coroutine a b m b
+data Coroutine i o :: Effect where
+  Yield :: o -> Coroutine i o m i
 
-yield :: Coroutine a b :< effs => a -> Eff effs b
+yield :: Coroutine i o :< effs => o -> Eff effs i
 yield = send . Yield
 
-data Status effs a b c
-  = Done c
-  | Yielded a !(b -> Eff (Coroutine a b ': effs) c)
+data Status effs i o a
+  = Done a
+  | Yielded o !(i -> Eff (Coroutine i o ': effs) a)
 
-runCoroutine :: Eff (Coroutine a b ': effs) c -> Eff effs (Status effs a b c)
+runCoroutine :: Eff (Coroutine i o ': effs) a -> Eff effs (Status effs i o a)
 runCoroutine = handle (pure . Done) \case
   Yield a -> control0 \k -> pure $! Yielded a k

@@ -2,7 +2,7 @@ module Control.EffectSpec (spec) where
 
 import Control.Applicative
 import Control.Monad
-import Data.Foldable
+import Data.Bifunctor
 import Data.Functor
 import Data.Monoid (Sum(..))
 import Test.Hspec
@@ -93,14 +93,31 @@ spec = do
           results `shouldBe` (Sum 6, [(Sum 3, True), (Sum 4, False)])
 
   describe "Coroutine" do
-    let feed :: forall a b effs c. [b] -> Eff (Coroutine a b ': effs) c -> Eff effs [a]
+    let feed :: forall i o effs a. [i] -> Eff (Coroutine i o ': effs) a
+             -> Eff effs ([o], Maybe (i -> Eff (Coroutine i o ': effs) a))
         feed as0 m = go as0 =<< runCoroutine m where
-          go (a:as) (Yielded b k) = (b:) <$> (feed as (k a))
-          go []     (Yielded b _) = pure [b]
-          go _      (Done _)      = pure []
+          go (a:as) (Yielded b k) = first (b:) <$> feed as (k a)
+          go []     (Yielded b k) = pure ([b], Just k)
+          go _      (Done _)      = pure ([], Nothing)
+
+        feed_ :: forall i o effs a. [i] -> Eff (Coroutine i o ': effs) a -> Eff effs [o]
+        feed_ xs m = fst <$> feed xs m
 
     it "allows suspending and resuming a computation" do
       let squares :: Coroutine Integer Integer :< effs => Integer -> Eff effs ()
           squares n = yield (n * n) >>= squares
-      run (feed @Integer @Integer [1..5] (squares 0))
+      run (feed_ @Integer @Integer [1..5] (squares 0))
         `shouldBe` [0, 1, 4, 9, 16, 25]
+
+    it "allows resuming a computation with different handlers in scope" do
+      let squares' :: (Reader Integer :< effs, Coroutine () Integer :< effs) => Eff effs a
+          squares' = ask @Integer >>= \n -> yield @() (n * n) *> squares'
+
+          (results, maybeK) = run $ runReader @Integer 2 $
+            feed @() @Integer [(), (), ()] squares'
+      results `shouldBe` [4, 4, 4, 4]
+      case maybeK of
+        Nothing -> expectationFailure "coroutine ended prematurely"
+        Just k ->
+          run (runReader @Integer 5 $ feed_ @() @Integer [(), ()] (k ()))
+            `shouldBe` [25, 25, 25]
