@@ -49,7 +49,7 @@ Here are the results:
 
 All implementations agree when the `Error` handler is inside the `State` handler, but `eff` disagrees with the other implementations when the reverse is true. When the `State` handler is innermost, `mtl`-family libraries provide so-called “transactional state semantics”, which results in modifications to the state within the scope of a `catch` being discarded if an exception is raised.
 
-The transactional semantics is sometimes useful, so this is sometimes provided as an example of why the `mtl`-family semantics is a feature, not a bug. However, it is really just a specific instance of a more general class of interactions that cause `mtl`-family libraries discard state, and other instances are more difficult to justify. For that reason, my perspective is that this behavior constitutes a bug, and `eff` breaks rank accordingly.
+The transactional semantics is sometimes useful, so this is sometimes provided as an example of why the `mtl`-family semantics is a feature, not a bug. However, it is really just a specific instance of a more general class of interactions that cause `mtl`-family libraries to discard state, and other instances are more difficult to justify. For that reason, my perspective is that this behavior constitutes a bug, and `eff` breaks rank accordingly.
 
 ## `NonDet` + `Error`
 
@@ -113,7 +113,7 @@ And the results:
 
 The results in this case are much more interesting, as there is significantly more disagreement! Let’s go over the different libraries one by one:
 
-  * In the case of `list-t`, I think its `MonadError` instance is unfortunately just plain broken, as it makes no attempt to install the `catch` handler on branch of execution other than the first. For that reason, I think its behavior can be mostly disregarded.
+  * In the case of `list-t`, I think its `MonadError` instance is unfortunately just plain broken, as it makes no attempt to install the `catch` handler on any branch of execution other than the first. For that reason, I think its behavior can be mostly disregarded.
 
   * `pipes` does somewhat better, getting at least the “`action1`, `NonDet` inner” case right, but the behavior when the `Error` handler is innermost is frankly mystifying to me. I haven’t investigated what exactly causes that.
 
@@ -173,7 +173,7 @@ To summarize, I think there are really only two justifiable semantics here:
 `catch` is usually the go-to example of a scoping operator, but the `Writer` effect also includes one in the form of `listen`. Here’s a test case that exercises `listen` in combination with `NonDet`:
 
 ```haskell
-action :: (NonDet :< es, Writer (Sum Int) :< es) => Eff es ((Sum Int), Bool)
+action :: (NonDet :< es, Writer (Sum Int) :< es) => Eff es (Sum Int, Bool)
 action = listen (add 1 *> (add 2 $> True <|> add 3 $> False))
   where add = tell . Sum @Int
 

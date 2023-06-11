@@ -23,9 +23,9 @@ import Data.IORef
 import Data.Kind (Constraint, Type)
 import Data.Type.Coercion (Coercion(..), gcoerceWith)
 import Data.Type.Equality ((:~:)(..), gcastWith)
-import GHC.Exts (Any, Int(..), Int#, RealWorld, RuntimeRep(..), SmallArray#, State#, TYPE, prompt#, control0#)
+import GHC.Exts (Any, Int(..), Int#, PromptTag#, RealWorld, RuntimeRep(..), SmallArray#, State#, TYPE, control0#, newPromptTag#, prompt#)
 import GHC.Types (IO(..))
-import System.IO.Unsafe (unsafeDupablePerformIO)
+import System.IO.Unsafe (unsafeDupablePerformIO, unsafePerformIO)
 import Unsafe.Coerce (unsafeCoerce)
 
 import Control.Effect.Internal.Debug
@@ -268,6 +268,28 @@ captureVM a = gcoerceWith (Coercion.sym $ anyCo @a) $
   IO.throwIO $! UnwindControl (coerce a)
 {-# INLINE captureVM #-}
 
+data PromptTag a = PromptTag# { getPromptTag# :: PromptTag# a }
+
+-- | The global 'PromptTag#' used for all @eff@ handlers. We don’t use a
+-- separate 'PromptTag#' for each handler because we have to implement our own
+-- prompt tags, anyway, and there’s no easy way to maintain the type safety
+-- benefits of using separate prompt tags.
+--
+-- However, using a single, global prompt tag for everything is, in fact,
+-- astonishingly unsafe. For one, it has a polymorphic type, even though it’s
+-- actually only a single prompt tag—it morally has type
+-- @'PromptTag' ('Result' 'Any')@—which means using it effectively involves an
+-- implicit 'unsafeCoerce'. What’s more, @eff@’s (incredibly unsafe) internal
+-- machinery depends on nothing except its primitives ever actually installing
+-- these prompt tags.
+--
+-- You do not want to use this.
+astonishinglyUnsafeGlobalEffPromptTag :: PromptTag (Result a)
+astonishinglyUnsafeGlobalEffPromptTag = unsafePerformIO $ IO \s ->
+  case newPromptTag# s of
+    (# s', tag #) -> (# s', PromptTag# tag #)
+{-# NOINLINE astonishinglyUnsafeGlobalEffPromptTag #-}
+
 -- | Runs an 'EVM' action with a new prompt installed. The arguments specify
 -- what happens when control exits the action.
 promptVM
@@ -283,9 +305,10 @@ promptVM
 promptVM m onReturn onAbort onControl = IO.handle handleUnwind do
   -- TODO: Explain why it is crucial that the exception handler is installed
   -- outside of the frame where we replace the registers!
-  Result _ a <- IO (prompt# (unIO (packIOResult m)))
+  Result _ a <- IO (prompt# tag# (unIO (packIOResult m)))
   onReturn a
   where
+    tag# = getPromptTag# (astonishinglyUnsafeGlobalEffPromptTag @a)
     handleUnwind (UnwindAbort pid a) = onAbort pid a
     handleUnwind (UnwindControl cap) = gcoerceWith (anyCo @a) $ onControl (coerce cap)
 {-# INLINE promptVM #-}
@@ -306,8 +329,9 @@ promptVM_ m rs onCapture = promptVM m onReturn rethrowAbort onCapture where
   rethrowAbort pid a = IO.throwIO $! UnwindAbort pid a
 {-# INLINE promptVM_ #-}
 
-controlVM :: ((a -> EVM b) -> IO (Registers, b)) -> IO (Registers, a)
-controlVM f = IO (control0# f#) <&> \(Result rs a) -> (BoxRegisters rs, a) where
+controlVM :: forall a b. ((a -> EVM b) -> IO (Registers, b)) -> IO (Registers, a)
+controlVM f = IO (control0# tag# f#) <&> \(Result rs a) -> (BoxRegisters rs, a) where
+  tag# = getPromptTag# (astonishinglyUnsafeGlobalEffPromptTag @b)
   f# k# = unIO (f k <&> \(BoxRegisters rs, a) -> Result rs a) where
     k a = EVM# \rs -> IO $ k# \s -> (# s, Result rs a #)
 {-# INLINE controlVM #-}
