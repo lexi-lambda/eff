@@ -1,3 +1,5 @@
 /dist-newstyle
 /cabal.project.local
 /stack.yaml
+result*
+.direnv
