@@ -1,34 +1,42 @@
-{-# OPTIONS_HADDOCK not-home #-}
-
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_HADDOCK not-home #-}
+
 module Control.Effect.Internal where
 
-import qualified Control.Exception as IO
-import qualified Data.Type.Coercion as Coercion
 
 import Control.Applicative
 import Control.Exception (Exception)
+import Control.Exception qualified as IO
 import Control.Monad
 import Control.Monad.IO.Class
+
 import Data.Bool (bool)
 import Data.Coerce
 import Data.Functor
 import Data.IORef
 import Data.Kind (Constraint, Type)
 import Data.Type.Coercion (Coercion(..), gcoerceWith)
+import Data.Type.Coercion qualified as Coercion
 import Data.Type.Equality ((:~:)(..), gcastWith)
+
 import GHC.Exts (Any, Int(..), Int#, PromptTag#, RealWorld, RuntimeRep(..), SmallArray#, State#, TYPE, control0#, newPromptTag#, prompt#)
-import GHC.Types (IO(..))
+import GHC.IO (IO(..))
+
 import System.IO.Unsafe (unsafeDupablePerformIO, unsafePerformIO)
+
 import Unsafe.Coerce (unsafeCoerce)
 
-import Control.Effect.Internal.Debug
+#ifdef EFF_DEBUG
+import Control.Effect.Internal.Debug (DebugCallStack)
+#endif
+
 import Control.Effect.Internal.SmallArray
 
 -- -----------------------------------------------------------------------------
@@ -80,9 +88,11 @@ type Effect = (Type -> Type) -> Type -> Type
 type (:<) :: Effect -> [Effect] -> Constraint
 class eff :< effs where
   reifyIndex :: Int
+
 instance {-# OVERLAPPING #-} eff :< (eff ': effs) where
   reifyIndex = 0
   {-# INLINE reifyIndex #-}
+
 instance eff :< effs => eff :< (eff' ': effs) where
   reifyIndex = reifyIndex @eff @effs + 1
   {-# INLINE reifyIndex #-}
@@ -418,7 +428,11 @@ pattern BoxTargets ts <- Targets (SmallArray (Targets# -> ts))
 noTargets :: Targets
 noTargets = Targets mempty
 
+#ifdef EFF_DEBUG
 lookupTarget :: forall effs eff. (DebugCallStack, eff :< effs) => Targets -> Handler eff
+#else
+lookupTarget :: forall effs eff. (eff :< effs) => Targets -> Handler eff
+#endif
 lookupTarget (Targets ts) = case indexSmallArray ts (reifyIndex @eff @effs) of (# Any h #) -> h
 
 pushTarget :: Handler eff -> Targets -> Targets
@@ -429,7 +443,11 @@ pushTarget h (Targets ts1) = Targets $ runSmallArray do
   copySmallArray ts2 1 ts1 0 len
   pure ts2
 
+#ifdef EFF_DEBUG
 dropTargets :: DebugCallStack => Int -> Targets -> Targets
+#else
+dropTargets :: Int -> Targets -> Targets
+#endif
 dropTargets idx (Targets ts) = Targets $ cloneSmallArray ts idx (sizeofSmallArray ts - idx)
 
 -- -----------------------------------------------------------------------------

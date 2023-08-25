@@ -8,7 +8,10 @@ module Control.Effect.State.Strict
 import Control.Effect.Base
 import Control.Effect.State
 import Control.Effect.Internal (evalState)
+
 import Data.Tuple (swap)
+
+--------------------------------------------------------------------------------
 
 -- | Handles a @'State'@ effect using a strict cell of mutable state—each use
 -- of 'put' or 'modify' eagerly forces the new value. The state is initialized

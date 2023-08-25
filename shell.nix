@@ -6,7 +6,7 @@ let
 in haskell-pkgs.eff.env.overrideAttrs (self: {
   buildInputs = self.buildInputs ++ [
     cabal-install
-    haskell.compiler.ghc962
+    pkgs.haskell.compiler.ghc962
     haskell-pkgs.haskell-language-server
   ];
 })

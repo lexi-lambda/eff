@@ -1,5 +1,6 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_GHC -Wno-redundant-constraints #-}
 
 module Control.Effect.Internal.SmallArray
   ( SmallArray(..)
@@ -19,14 +20,16 @@ module Control.Effect.Internal.SmallArray
   , cloneSmallMutableArray
   ) where
 
-import qualified Data.Primitive.SmallArray as P
-
+import Control.Effect.Internal.Debug (DebugCallStack, assertM)
 import Control.Exception (assert)
-import Control.Monad.Primitive
+import Control.Monad.Primitive (PrimMonad (..))
+
 import Data.Primitive.SmallArray (SmallArray(..), SmallMutableArray(..))
+import Data.Primitive.SmallArray qualified as P
+
 import GHC.Exts (Int(..), indexSmallArray#)
 
-import Control.Effect.Internal.Debug
+--------------------------------------------------------------------------------
 
 newSmallArray :: (DebugCallStack, PrimMonad m) => Int -> a -> m (SmallMutableArray (PrimState m) a)
 newSmallArray len x = assert (len >= 0) $ P.newSmallArray len x
@@ -55,17 +58,14 @@ readSmallArray arr idx =
   assert (idx >= 0) $ assert (idx < sizeofSmallMutableArray arr) $ P.readSmallArray arr idx
 {-# INLINE readSmallArray #-}
 
-writeSmallArray
-  :: (DebugCallStack, PrimMonad m) => SmallMutableArray (PrimState m) a -> Int -> a -> m ()
+writeSmallArray :: (DebugCallStack, PrimMonad m) => SmallMutableArray (PrimState m) a -> Int -> a -> m ()
 writeSmallArray arr idx x = do
   assertM $ idx >= 0
   assertM $ idx < sizeofSmallMutableArray arr
   P.writeSmallArray arr idx x
 {-# INLINE writeSmallArray #-}
 
-copySmallArray
-  :: (DebugCallStack, PrimMonad m)
-  => SmallMutableArray (PrimState m) a -> Int -> SmallArray a -> Int -> Int -> m ()
+copySmallArray :: (DebugCallStack, PrimMonad m) => SmallMutableArray (PrimState m) a -> Int -> SmallArray a -> Int -> Int -> m ()
 copySmallArray dst idx_dst src idx_src len = do
   assertM $ len >= 0
   assertM $ idx_dst >= 0
@@ -95,9 +95,7 @@ copySmallMutableArray dst idx_dst src idx_src len = do
   P.copySmallMutableArray dst idx_dst src idx_src len
 {-# INLINE copySmallMutableArray #-}
 
-cloneSmallMutableArray
-  :: (DebugCallStack, PrimMonad m)
-  => SmallMutableArray (PrimState m) a -> Int -> Int -> m (SmallMutableArray (PrimState m) a)
+cloneSmallMutableArray :: (DebugCallStack, PrimMonad m) => SmallMutableArray (PrimState m) a -> Int -> Int -> m (SmallMutableArray (PrimState m) a)
 cloneSmallMutableArray src idx len = do
   assertM $ len >= 0
   assertM $ idx >= 0
